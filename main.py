@@ -2,6 +2,8 @@ from hashlib import sha256
 from time import time
 from termcolor import colored
 
+DIFFICULTY = 5
+
 class Transaction:
     def __init__(self, from_hash, to_hash, amount, time):
         self.from_hash = from_hash
@@ -25,6 +27,9 @@ class Transaction:
         return sha256(str_to_hash.encode("utf-8")).hexdigest()
 
     def validate(self):
+        if (self.time < time() / 1000):
+            return (False, "Invalid future time")
+        # TODO: Check address has valid funds
         return (True, "")
 
 
@@ -61,7 +66,7 @@ class Block:
         self.hash = self.get_hash()
 
     def __str__(self):
-        s = colored(f"Block {self.hash[5:10]}", "green") + "\n"
+        s = colored(f"Block {self.hash[DIFFICULTY:10]}", "green") + "\n"
         s += f"hash: {self.hash[:40]}\n"
         s += f"previous hash: {self.prev_hash[:40]}\n"
         s += f"time: {self.time}\n"
@@ -80,7 +85,7 @@ class Block:
         return sha256(str_to_hash.encode('utf-8')).hexdigest()
 
     def validate(self, is_genisis=False):
-        is_valid_nonce = self.hash.startswith("00000")
+        is_valid_nonce = self.hash.startswith("0"*DIFFICULTY)
         if is_genisis:
             return (True, "") if is_valid_nonce else (False, "Invalid nonce")
 
@@ -90,6 +95,12 @@ class Block:
             return (False, "Invalid future block time")
         if self.merkle_root != get_merkle_root(self.txs):
             return (False, "Invalid merkle root")
+        if not len(self.txs):
+            return (False, "No transactions in block")
+        for tx in self.txs:
+            is_valid, reason = tx.validate()
+            if not is_valid:
+                return (False, f"Invalid tx: {reason}")
         return (True, "") if is_valid_nonce else (False, "Invalid nonce")
 
 
@@ -144,7 +155,7 @@ def mine_block(transactions, prev_hash, block_time):
             print(f"Tried {nonce} nonces...")
 
 def main():
-    GENISIS_TIME = 1742499303227
+    GENISIS_TIME = 1742499503227
     GENISIS_ADDR = sha256("GENISIS".encode("utf-8")).hexdigest()
     ELGIN_ADDR = sha256("ELGINBELOY".encode("utf-8")).hexdigest()
     RESERVE_ADDR = sha256("RESERVE".encode("utf-8")).hexdigest()
@@ -153,14 +164,26 @@ def main():
         Transaction(GENISIS_ADDR, ELGIN_ADDR, 100, GENISIS_TIME))
     genisis_transactions.append(
         Transaction(GENISIS_ADDR, RESERVE_ADDR, 100, GENISIS_TIME))
-    genisis_nonce = 1955922
+    genisis_nonce = 0
     genisis_block = Block(
         genisis_transactions,
         "genisis",
-        GENISIS_TIME,
+        GENISIS_TIME+1,
         genisis_nonce
     )
     valid, reason = genisis_block.validate(is_genisis=True)
+    while not valid:
+        genisis_nonce += 1
+        discover_probability = 1 - ((((16**DIFFICULTY)-1)/(16**DIFFICULTY))**genisis_nonce)
+        print(f"Nonce {genisis_nonce}")
+        print(f"   discover probability now at {discover_probability}")
+        genisis_block = Block(
+            genisis_transactions,
+            "genisis",
+            GENISIS_TIME+1,
+            genisis_nonce
+        )
+        valid, reason = genisis_block.validate(is_genisis=True)
     if not valid:
         print(colored("Invalid Genisis Block", "red"))
         print(reason)
